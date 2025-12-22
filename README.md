@@ -78,3 +78,16 @@ communication process so please do not be shy. Speak up!
   * Debian Buster
   * Debian Stretch
   * Debian Jessie
+
+
+# 兼容性修改
+
+## Commit 1d25654596c1066a4f19d6af637f171d7d5f0ef8 (2025-12-16)
+
+- **新增支持 Ubuntu 22.04 操作系统**
+- **兼容 CMake 3.15+ 版本**（移除不支持的 `-v` 参数）
+- **兼容 libmicrohttpd 0.9.70+ 版本**（适配新的返回类型）
+  - 影响 `promhttp_handler()` 函数的返回类型
+  - 0.9.70+ 版本使用 `enum MHD_Result`，旧版本使用 `int`
+  - 通过编译时宏检查确保版本兼容性
+- **兼容 Go 1.16+ 版本**（使用 `go install` 替代已废弃的 `go get`）
