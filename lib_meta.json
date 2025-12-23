@@ -1,0 +1,15 @@
+{
+    "name": "prometheus-client-c", 
+    "version": "0.13.0", 
+    "type": "thirdpartylib", 
+    "dependencies": {
+    },
+    "runtimeLibs": [
+        {
+            "localPath": "lib/libprom.so"
+        },
+        {
+            "localPath": "lib/libpromhttp.so"
+        }
+    ]
+}
