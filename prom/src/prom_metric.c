@@ -29,6 +29,7 @@
 #include "prom_metric_i.h"
 #include "prom_metric_sample_histogram_i.h"
 #include "prom_metric_sample_i.h"
+#include <stdatomic.h>
 
 char *prom_metric_type_map[4] = {"counter", "gauge", "histogram", "summary"};
 
@@ -235,4 +236,96 @@ prom_metric_sample_histogram_t *prom_metric_sample_histogram_from_labels(prom_me
   pthread_rwlock_unlock(self->rwlock);
   prom_free((void *)l_value);
   return sample;
+}
+
+int prom_metric_remove_sample(prom_metric_t *self, const char **label_values) {
+    PROM_ASSERT(self != NULL);
+    int r = 0;
+    
+    r = pthread_rwlock_wrlock(self->rwlock);
+    if (r) {
+        PROM_LOG(PROM_PTHREAD_RWLOCK_LOCK_ERROR);
+        return r;
+    }
+
+    // Generate the l_value for the sample to be removed
+    r = prom_metric_formatter_load_l_value(self->formatter, self->name, NULL, 
+                                         self->label_key_count, self->label_keys, 
+                                         label_values);
+    if (r) {
+        pthread_rwlock_unlock(self->rwlock);
+        return r;
+    }
+
+    const char *l_value = prom_metric_formatter_dump(self->formatter);
+    if (l_value == NULL) {
+        pthread_rwlock_unlock(self->rwlock);
+        return 1;
+    }
+
+    // DEBUG: Print the l_value we're trying to remove
+    //printf("Attempting to remove sample with l_value: %s\n", l_value);
+    
+    // Check if the sample exists before attempting to remove
+    void *existing_sample = prom_map_get(self->samples, l_value);
+    if (existing_sample != NULL) {
+        PROM_LOG("Sample found, proceeding with removal");
+        r = prom_map_delete(self->samples, l_value);
+        if (r) {
+            PROM_LOG("Failed to remove sample from map");
+        } else {
+            PROM_LOG("Sample successfully removed");
+        }
+    } else {
+        PROM_LOG("Sample not found for removal");
+        r = 1; // Indicate that sample was not found
+    }
+    
+    // Clean up
+    prom_free((void *)l_value);
+    
+    pthread_rwlock_unlock(self->rwlock);
+    return r;
+}
+
+// 在 prom_metric.c 中添加调试函数
+size_t prom_metric_sample_count(prom_metric_t *self) {
+    PROM_ASSERT(self != NULL);
+    if (self == NULL) return 0;
+    
+    int r = pthread_rwlock_rdlock(self->rwlock);
+    if (r) {
+        PROM_LOG(PROM_PTHREAD_RWLOCK_LOCK_ERROR);
+        return 0;
+    }
+    
+    size_t count = prom_map_size(self->samples);
+    
+    pthread_rwlock_unlock(self->rwlock);
+    return count;
+}
+
+void prom_metric_print_samples(prom_metric_t *self) {
+    PROM_ASSERT(self != NULL);
+    if (self == NULL) return;
+
+    int r = pthread_rwlock_rdlock(self->rwlock);
+    if (r) {
+        PROM_LOG(PROM_PTHREAD_RWLOCK_LOCK_ERROR);
+        return;
+    }
+
+    // 遍历映射表的所有桶
+    for (size_t i = 0; i < self->samples->max_size; i++) {
+        prom_linked_list_t *list = self->samples->addrs[i];
+        prom_linked_list_node_t *current = list->head;
+        while (current != NULL) {
+            prom_map_node_t *node = (prom_map_node_t *)current->item;
+            prom_metric_sample_t *sample = (prom_metric_sample_t *)node->value;
+            printf("Sample: l_value=%s, r_value=%f\n", sample->l_value, atomic_load(&sample->r_value));
+            current = current->next;
+        }
+    }
+
+    pthread_rwlock_unlock(self->rwlock);
 }
