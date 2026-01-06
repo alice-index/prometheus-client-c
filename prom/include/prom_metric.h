@@ -64,4 +64,10 @@ prom_metric_sample_t *prom_metric_sample_from_labels(prom_metric_t *self, const 
 prom_metric_sample_histogram_t *prom_metric_sample_histogram_from_labels(prom_metric_t *self,
                                                                          const char **label_values);
 
+/**
+ *@brief modify @20251117 根据标签值删除样本接口
+ *@param 
+ *@return 
+*/                                                                        
+int prom_metric_remove_sample(prom_metric_t *self, const char **label_values);
 #endif  // PROM_METRIC_H
