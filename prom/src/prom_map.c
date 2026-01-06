@@ -358,6 +358,7 @@ int prom_map_set(prom_map_t *self, const char *key, void *value) {
   return r;
 }
 
+#if 0
 static int prom_map_delete_internal(const char *key, size_t *size, size_t *max_size, prom_linked_list_t *keys,
                                     prom_linked_list_t **addrs, prom_map_node_free_value_fn free_value_fn) {
   int r = 0;
@@ -369,7 +370,8 @@ static int prom_map_delete_internal(const char *key, size_t *size, size_t *max_s
     prom_map_node_t *current_map_node = (prom_map_node_t *)current_node->item;
     prom_linked_list_compare_t result = prom_linked_list_compare(list, current_map_node, temp_map_node);
     if (result == PROM_EQUAL) {
-      r = prom_linked_list_remove(list, current_node);
+    /*modify @20251114 源代码bug */
+      r = prom_linked_list_remove(list, current_map_node);
       if (r) return r;
 
       r = prom_linked_list_remove(keys, (char *)current_map_node->key);
@@ -383,6 +385,102 @@ static int prom_map_delete_internal(const char *key, size_t *size, size_t *max_s
   temp_map_node = NULL;
   return r;
 }
+#endif 
+
+static int prom_map_delete_internal(const char *key, size_t *size, size_t *max_size, prom_linked_list_t *keys,
+                                    prom_linked_list_t **addrs, prom_map_node_free_value_fn free_value_fn) {
+
+  size_t index = prom_map_get_index_internal(key, size, max_size);
+  prom_linked_list_t *list = addrs[index];
+  
+  // 创建临时节点用于比较
+  prom_map_node_t *temp_map_node = prom_map_node_new(key, NULL, free_value_fn);
+  if (temp_map_node == NULL) {
+    return 1;
+  }
+
+  prom_linked_list_node_t *prev = NULL;
+  prom_linked_list_node_t *current_node = list->head;
+  bool node_found = false;
+  
+  // 在桶链表中查找要删除的节点
+  while (current_node != NULL) {
+    prom_map_node_t *current_map_node = (prom_map_node_t *)current_node->item;
+    
+    if (strcmp(current_map_node->key, key) == 0) {
+      node_found = true;
+      
+      // 从桶链表中移除节点
+      if (prev == NULL) {
+        list->head = current_node->next;
+      } else {
+        prev->next = current_node->next;
+      }
+      
+      // 更新尾指针（如果需要）
+      if (current_node == list->tail) {
+        list->tail = prev;
+      }
+      
+      // 从键链表中移除对应的键
+      prom_linked_list_node_t *key_prev = NULL;
+      prom_linked_list_node_t *key_current = keys->head;
+      bool key_found = false;
+      
+      while (key_current != NULL) {
+        if (strcmp((const char *)key_current->item, key) == 0) {
+          if (key_prev == NULL) {
+            keys->head = key_current->next;
+          } else {
+            key_prev->next = key_current->next;
+          }
+          
+          // 更新键链表的尾指针（如果需要）
+          if (key_current == keys->tail) {
+            keys->tail = key_prev;
+          }
+          
+          // 释放键链表节点（但不释放键字符串，因为它在映射节点中管理）
+          prom_free(key_current);
+          key_found = true;
+          break;
+        }
+        key_prev = key_current;
+        key_current = key_current->next;
+      }
+      
+      if (!key_found) {
+        printf("Warning: Key '%s' not found in keys list during deletion\n",key);
+      }
+      
+      // 释放映射节点资源
+      prom_free((void *)current_map_node->key);
+      if (current_map_node->value != NULL) {
+        free_value_fn(current_map_node->value);
+      }
+      prom_free(current_map_node);
+      prom_free(current_node);
+      
+      (*size)--;
+      list->size--;
+      break;
+    }
+    
+    prev = current_node;
+    current_node = current_node->next;
+  }
+  
+  // 清理临时节点
+  prom_map_node_destroy(temp_map_node);
+  
+  if (!node_found) {
+    printf("Node with key '%s' not found for deletion\n", key);
+    return 1;
+  }
+  
+  return 0;
+}
+
 
 int prom_map_delete(prom_map_t *self, const char *key) {
   PROM_ASSERT(self != NULL);
